@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clipping Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 p-6 md:p-8">
+  <header class="max-w-5xl mx-auto mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="text-3xl font-bold">Clipping Agent</h1>
+      <p class="text-sm text-slate-500">Descărcare, transcriere, selecție AI, face-tracking 9:16 și review social media</p>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto">
+    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-6">
+      <div class="flex gap-2 mb-4">
+        <button type="button" id="mode-url" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white">Link Video (Multi-platformă)</button>
+        <button type="button" id="mode-file" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Upload Fișier Local</button>
+      </div>
+
+      <form id="job-form" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <input type="url" id="url" required placeholder="URL (YouTube, TikTok, Instagram, Facebook, X, Twitch...)" class="md:col-span-2 px-3 py-2 border rounded-lg text-sm">
+        <input type="file" id="video-file" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*" class="hidden md:col-span-2 px-3 py-1.5 border rounded-lg text-sm bg-slate-50">
+        <input type="number" id="clips_count" value="3" min="1" max="10" placeholder="Nr. Clipuri" class="px-3 py-2 border rounded-lg text-sm">
+        <input type="number" id="min_duration" value="15" min="3" placeholder="Sec Min" class="px-3 py-2 border rounded-lg text-sm">
+        <input type="number" id="max_duration" value="60" min="5" placeholder="Sec Max" class="px-3 py-2 border rounded-lg text-sm">
+        <button type="submit" id="submit-btn" class="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700">Start Job</button>
+      </form>
+      <p id="upload-error" class="text-xs text-rose-600 mt-2 hidden"></p>
+    </div>
+
+    <div id="job-list" class="space-y-4"></div>
+  </main>
+
+  <script>
+    const expandedJobs = new Set();
+
+    function statusBadgeClass(status) {
+      if (status === 'completed') return 'bg-emerald-600 text-white';
+      if (status === 'processing') return 'bg-blue-600 text-white';
+      if (status === 'failed') return 'bg-rose-600 text-white';
+      return 'bg-amber-500 text-white';
+    }
+
+    function reviewBadgeClass(status) {
+      if (status === 'approved') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+      if (status === 'rejected') return 'bg-rose-100 text-rose-800 border-rose-300';
+      return 'bg-slate-100 text-slate-700 border-slate-300';
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    let inputMode = 'url';
+    const modeUrlBtn = document.getElementById('mode-url');
+    const modeFileBtn = document.getElementById('mode-file');
+    const urlInput = document.getElementById('url');
+    const fileInput = document.getElementById('video-file');
+    const submitBtn = document.getElementById('submit-btn');
+    const uploadError = document.getElementById('upload-error');
+
+    function setInputMode(mode) {
+      inputMode = mode;
+      uploadError.classList.add('hidden');
+      if (mode === 'url') {
+        modeUrlBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white';
+        modeFileBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200';
+        urlInput.classList.remove('hidden');
+        urlInput.required = true;
+        fileInput.classList.add('hidden');
+        fileInput.required = false;
+      } else {
+        modeFileBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white';
+        modeUrlBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200';
+        fileInput.classList.remove('hidden');
+        fileInput.required = true;
+        urlInput.classList.add('hidden');
+        urlInput.required = false;
+      }
+    }
+
+    modeUrlBtn.addEventListener('click', () => setInputMode('url'));
+    modeFileBtn.addEventListener('click', () => setInputMode('file'));
+
+    document.getElementById('job-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      uploadError.classList.add('hidden');
+      const clips_count = parseInt(document.getElementById('clips_count').value || '3', 10);
+      const min_duration = parseFloat(document.getElementById('min_duration').value || '15');
+      const max_duration = parseFloat(document.getElementById('max_duration').value || '60');
+
+      submitBtn.disabled = true;
+      const origText = submitBtn.textContent;
+      submitBtn.textContent = inputMode === 'file' ? 'Se încarcă...' : 'Se pornește...';
+
+      try {
+        let res;
+        if (inputMode === 'url') {
+          res = await fetch('/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: urlInput.value, clips_count, min_duration, max_duration })
+          });
+          if (res.ok) urlInput.value = '';
+        } else {
+          const formData = new FormData();
+          formData.append('file', fileInput.files[0]);
+          formData.append('clips_count', String(clips_count));
+          formData.append('min_duration', String(min_duration));
+          formData.append('max_duration', String(max_duration));
+          res = await fetch('/jobs/upload', { method: 'POST', body: formData });
+          if (res.ok) fileInput.value = '';
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          uploadError.textContent = err.detail || 'Eroare la pornirea jobului.';
+          uploadError.classList.remove('hidden');
+        }
+        fetchJobs(true);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = origText;
+      }
+    });
+
+    async function updateClip(jobId, clipId, body) {
+      const res = await fetch(`/jobs/${jobId}/clips/${clipId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        await fetchJobs(true);
+      }
+    }
+
+    function toggleJob(jobId) {
+      if (expandedJobs.has(jobId)) expandedJobs.delete(jobId);
+      else expandedJobs.add(jobId);
+      fetchJobs(true);
+    }
+
+    function renderClipCard(jobId, clip) {
+      const social = clip.social || {};
+      const yt = social.youtube_shorts || {};
+      const tt = social.tiktok || {};
+      const ig = social.instagram_reels || {};
+      const reviewStatus = clip.review_status || 'pending_review';
+      const videoUrl = `/jobs/${jobId}/files/${clip.clip_id}.mp4`;
+      const srtUrl = clip.subtitles ? `/jobs/${jobId}/files/${clip.clip_id}.srt` : null;
+
+      const card = document.createElement('div');
+      card.className = 'border border-slate-200 rounded-xl p-4 bg-slate-50 grid grid-cols-1 md:grid-cols-3 gap-4';
+
+      card.innerHTML = `
+        <div class="flex flex-col gap-2">
+          <video controls preload="metadata" class="w-full rounded-lg bg-black aspect-[9/16] max-h-96 object-contain" src="${videoUrl}"></video>
+          <div class="flex items-center justify-between text-xs text-slate-500">
+            <span>${escapeHtml(clip.clip_id)} · ${clip.duration ?? ''}s</span>
+            <div class="flex gap-2">
+              <a href="${videoUrl}" download class="text-blue-600 hover:underline">MP4</a>
+              ${srtUrl ? `<a href="${srtUrl}" download class="text-blue-600 hover:underline">SRT</a>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="md:col-span-2 flex flex-col gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium border ${reviewBadgeClass(reviewStatus)}">${escapeHtml(reviewStatus)}</span>
+            <div class="flex gap-2">
+              <button data-action="approve" class="px-3 py-1 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">Aprobă</button>
+              <button data-action="reject" class="px-3 py-1 rounded-lg text-xs font-medium bg-rose-600 text-white hover:bg-rose-700">Respinge</button>
+              <button data-action="save" class="px-3 py-1 rounded-lg text-xs font-medium bg-slate-800 text-white hover:bg-slate-900">Salvează text</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Titlu / Hook</label>
+            <input type="text" data-field="title" value="${escapeHtml(clip.title)}" class="w-full px-3 py-1.5 text-sm border rounded-lg bg-white">
+          </div>
+
+          <div class="grid grid-cols-1 gap-2">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">YouTube Shorts (descriere)</label>
+              <textarea rows="2" data-field="yt" class="w-full px-3 py-1.5 text-xs border rounded-lg bg-white">${escapeHtml(yt.description || '')}</textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">TikTok (caption)</label>
+              <textarea rows="2" data-field="tt" class="w-full px-3 py-1.5 text-xs border rounded-lg bg-white">${escapeHtml(tt.caption || '')}</textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Instagram Reels (caption)</label>
+              <textarea rows="2" data-field="ig" class="w-full px-3 py-1.5 text-xs border rounded-lg bg-white">${escapeHtml(ig.caption || '')}</textarea>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const getEditedPayload = (nextStatus) => {
+        const title = card.querySelector('[data-field="title"]').value;
+        const ytDesc = card.querySelector('[data-field="yt"]').value;
+        const ttCap = card.querySelector('[data-field="tt"]').value;
+        const igCap = card.querySelector('[data-field="ig"]').value;
+        const updatedSocial = {
+          youtube_shorts: { ...yt, title: title.slice(0, 100), description: ytDesc },
+          tiktok: { ...tt, caption: ttCap },
+          instagram_reels: { ...ig, caption: igCap }
+        };
+        const body = { title, social: updatedSocial };
+        if (nextStatus) body.review_status = nextStatus;
+        return body;
+      };
+
+      card.querySelector('[data-action="approve"]').addEventListener('click', () => updateClip(jobId, clip.clip_id, getEditedPayload('approved')));
+      card.querySelector('[data-action="reject"]').addEventListener('click', () => updateClip(jobId, clip.clip_id, getEditedPayload('rejected')));
+      card.querySelector('[data-action="save"]').addEventListener('click', () => updateClip(jobId, clip.clip_id, getEditedPayload(null)));
+
+      return card;
+    }
+
+    async function fetchJobs(force = false) {
+      // Nu suprascriem DOM-ul în timpul editării unui clip expandat la polling automat
+      if (!force && expandedJobs.size > 0 && document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        return;
+      }
+      const res = await fetch('/jobs');
+      const jobs = await res.json();
+      const list = document.getElementById('job-list');
+      list.innerHTML = '';
+
+      jobs.forEach(job => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'bg-white p-4 rounded-xl shadow-sm border border-slate-200';
+
+        const clips = (job.metadata && job.metadata.clips) ? job.metadata.clips : [];
+        const isExpanded = expandedJobs.has(job.job_id);
+
+        const header = document.createElement('div');
+        header.className = 'flex flex-wrap justify-between items-center gap-3';
+        header.innerHTML = `
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm">${escapeHtml(job.job_id)}</span>
+              <span class="px-2 py-0.5 rounded text-xs font-medium ${statusBadgeClass(job.status)}">${escapeHtml(job.status)}</span>
+              ${job.current_step && job.status === 'processing' ? `<span class="text-xs text-blue-600">${escapeHtml(job.current_step)}</span>` : ''}
+            </div>
+            <p class="text-xs text-slate-500 truncate max-w-xl">${escapeHtml(job.source_url)}</p>
+            ${job.error ? `<p class="text-xs text-rose-600 mt-1">${escapeHtml(job.error)}</p>` : ''}
+          </div>
+          <div class="flex items-center gap-2">
+            ${clips.length > 0 ? `<button data-toggle="${escapeHtml(job.job_id)}" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 hover:bg-slate-100">${isExpanded ? 'Ascunde clipuri' : `Vezi clipuri (${clips.length})`}</button>` : ''}
+          </div>
+        `;
+        wrapper.appendChild(header);
+
+        const toggleBtn = header.querySelector('[data-toggle]');
+        if (toggleBtn) {
+          toggleBtn.addEventListener('click', () => toggleJob(job.job_id));
+        }
+
+        if (isExpanded && clips.length > 0) {
+          const clipsContainer = document.createElement('div');
+          clipsContainer.className = 'mt-4 space-y-4';
+          clips.forEach(clip => clipsContainer.appendChild(renderClipCard(job.job_id, clip)));
+          wrapper.appendChild(clipsContainer);
+        }
+
+        list.appendChild(wrapper);
+      });
+    }
+
+    fetchJobs();
+    setInterval(() => fetchJobs(false), 3000);
+  </script>
+</body>
+</html>
