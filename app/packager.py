@@ -48,13 +48,8 @@ def generate_social_pack(
         return _fallback_pack(clip, transcript_excerpt)
 
     try:
-        from openai import OpenAI
+        from app.llm_client import chat_completion
 
-        client = OpenAI(
-            api_key=config.LLM_API_KEY,
-            base_url=config.LLM_BASE_URL or None,
-            timeout=20.0,
-        )
         prompt = (
             f"Language: {language}\n"
             f"Clip title/hook: {clip.title}\n"
@@ -65,8 +60,7 @@ def generate_social_pack(
             "- tiktok: {caption (hook + short CTA), hashtags (array of 3-5)}\n"
             "- instagram_reels: {caption (engaging + save/share CTA), hashtags (array of 5-8)}"
         )
-        resp = client.chat.completions.create(
-            model=config.LLM_MODEL,
+        content = chat_completion(
             messages=[
                 {
                     "role": "system",
@@ -75,8 +69,8 @@ def generate_social_pack(
                 {"role": "user", "content": prompt},
             ],
             temperature=0.5,
+            timeout=20.0,
         )
-        content = resp.choices[0].message.content.strip()
         if content.startswith("```json"):
             content = content[7:]
         elif content.startswith("```"):

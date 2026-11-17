@@ -29,14 +29,24 @@ Create `.env` from `.env.example`:
 cp .env.example .env
 ```
 
-Configure `.env` (optional LLM settings — if left empty, heuristic selection and template copy are used):
+Configure `.env` (optional LLM settings — supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, **Groq**, **OpenRouter**, **DeepSeek**, **Mistral**, **Together**, **Ollama**, **LM Studio**, or any OpenAI-compatible endpoint; if left empty, heuristic selection and template copy are used):
+
 ```env
 WHISPER_MODEL=small
 WHISPER_DEVICE=auto
 WHISPER_COMPUTE_TYPE=int8
+
+# Examples:
+# LLM_PROVIDER=auto | openai | gemini | anthropic | groq | openrouter | deepseek | mistral | together | ollama | lmstudio
+LLM_PROVIDER=gemini
 LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_BASE_URL=
 LLM_MODEL=gemini-2.5-flash
+
+# Local Ollama example (no API key needed):
+# LLM_PROVIDER=ollama
+# LLM_MODEL=llama3.1
+
 DB_PATH=data/jobs.db
 ```
 

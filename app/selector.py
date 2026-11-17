@@ -42,9 +42,7 @@ def _select_with_llm(
     min_duration: float,
     max_duration: float,
 ) -> list[CandidateClip]:
-    from openai import OpenAI
-
-    client = OpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_BASE_URL or None)
+    from app.llm_client import chat_completion
 
     lines = []
     total = 0
@@ -88,12 +86,11 @@ Transcript:
 {transcript_text}
 """
 
-    response = client.chat.completions.create(
-        model=config.LLM_MODEL,
-        temperature=0.3,
+    raw_text = chat_completion(
         messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
     )
-    data = _extract_json(response.choices[0].message.content)
+    data = _extract_json(raw_text)
 
     candidates = []
     for item in data.get("clips", []):
